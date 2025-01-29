@@ -538,7 +538,7 @@ static int ffmpeg_set_quality(struct ffmpeg *ffmpeg)
             ffmpeg->quality = 45; // default to 45% quality
         }
 		if (ffmpeg->preferred_codec == USER_CODEC_H264NVENC) {
-			/*not supported by h264 nvenc*/
+			/*nvenc supports different options form what Motion has*/
 			av_dict_set(&ffmpeg->opts, "preset", "p1", 0);
 			av_dict_set(&ffmpeg->opts, "tune", "hq", 0);
 			av_dict_set(&ffmpeg->opts, "hwaccel", "cuda", 0);
