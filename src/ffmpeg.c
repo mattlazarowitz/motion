@@ -537,31 +537,58 @@ static int ffmpeg_set_quality(struct ffmpeg *ffmpeg)
         if (ffmpeg->quality <= 0) {
             ffmpeg->quality = 45; // default to 45% quality
         }
-        av_dict_set(&ffmpeg->opts, "preset", "ultrafast", 0);
-        av_dict_set(&ffmpeg->opts, "tune", "zerolatency", 0);
+		if (ffmpeg->preferred_codec == USER_CODEC_H264NVENC) {
+			/*not supported by h264 nvenc*/
+			av_dict_set(&ffmpeg->opts, "preset", "p1", 0);
+			av_dict_set(&ffmpeg->opts, "tune", "hq", 0);
+			av_dict_set(&ffmpeg->opts, "hwaccel", "cuda", 0);
+			av_dict_set(&ffmpeg->opts, "profile", "high", 0);
+		} else {
+			av_dict_set(&ffmpeg->opts, "preset", "ultrafast", 0);
+			av_dict_set(&ffmpeg->opts, "tune", "zerolatency", 0);			
+		}
         /* This next if statement needs validation.  Are mpeg4omx
          * and v4l2m2m even MY_CODEC_ID_H264 or MY_CODEC_ID_HEVC
          * such that it even would be possible to be part of this
          * if block to start with? */
-        if ((ffmpeg->preferred_codec == USER_CODEC_H264OMX) ||
-            (ffmpeg->preferred_codec == USER_CODEC_MPEG4OMX) ||
-            (ffmpeg->preferred_codec == USER_CODEC_V4L2M2M)) {
-            // bit_rate = ffmpeg->width * ffmpeg->height * ffmpeg->fps * quality_factor
-            ffmpeg->quality = (int)(((int64_t)ffmpeg->width * ffmpeg->height * ffmpeg->fps * ffmpeg->quality) >> 7);
-            // Clip bit rate to min
-            if (ffmpeg->quality < 4000) {
-                // magic number
-                ffmpeg->quality = 4000;
-            }
-            ffmpeg->ctx_codec->profile = FF_PROFILE_H264_HIGH;
-            ffmpeg->ctx_codec->bit_rate = ffmpeg->quality;
-        } else {
-            // Control other H264 encoders quality via CRF
-            char crf[10];
-            ffmpeg->quality = (int)(( (100-ffmpeg->quality) * 51)/100);
-            snprintf(crf, 10, "%d", ffmpeg->quality);
-            av_dict_set(&ffmpeg->opts, "crf", crf, 0);
-        }
+		switch (ffmpeg->preferred_codec) {
+			case USER_CODEC_H264OMX:
+			case USER_CODEC_MPEG4OMX:
+			case USER_CODEC_V4L2M2M:
+				// bit_rate = ffmpeg->width * ffmpeg->height * ffmpeg->fps * quality_factor
+				ffmpeg->quality = (int)(((int64_t)ffmpeg->width * ffmpeg->height * ffmpeg->fps * ffmpeg->quality) >> 7);
+				// Clip bit rate to min
+				if (ffmpeg->quality < 4000) {
+					// magic number
+					ffmpeg->quality = 4000;
+				}
+				ffmpeg->ctx_codec->profile = FF_PROFILE_H264_HIGH;
+				ffmpeg->ctx_codec->bit_rate = ffmpeg->quality;
+			break;
+			case USER_CODEC_H264NVENC:
+				// just not working well for NVENC
+				//char cq[10];
+				//MOTION_LOG(INF, TYPE_ENCODER, NO_ERRNO, _("inital nvenc quality: %d"),ffmpeg->quality);
+				//ffmpeg->quality = (int)(( (100-ffmpeg->quality) * 51)/100);
+				//snprintf(cq, 10, "%d", ffmpeg->quality);
+				// bit_rate = ffmpeg->width * ffmpeg->height * ffmpeg->fps * quality_factor
+				ffmpeg->quality = (int)(((int64_t)ffmpeg->width * ffmpeg->height * ffmpeg->fps * ffmpeg->quality) >> 7);
+				// Clip bit rate to min
+				if (ffmpeg->quality < 4000) {
+					// magic number
+					ffmpeg->quality = 4000;
+				}
+				ffmpeg->ctx_codec->profile = FF_PROFILE_H264_HIGH;
+				ffmpeg->ctx_codec->bit_rate = ffmpeg->quality; 
+				break;
+			default:
+				// Control other H264 encoders quality via CRF
+				char crf[10];
+				ffmpeg->quality = (int)(( (100-ffmpeg->quality) * 51)/100);
+				snprintf(crf, 10, "%d", ffmpeg->quality);
+				av_dict_set(&ffmpeg->opts, "crf", crf, 0);
+				break;
+		}
     } else {
         /* The selection of 8000 is a subjective number based upon viewing output files */
         if (ffmpeg->quality > 0) {
@@ -645,7 +672,9 @@ static int ffmpeg_set_codec_preferred(struct ffmpeg *ffmpeg)
         ffmpeg->preferred_codec = USER_CODEC_H264OMX;
     } else if (mystreq(ffmpeg->codec->name, "mpeg4_omx")) {
         ffmpeg->preferred_codec = USER_CODEC_MPEG4OMX;
-    } else {
+    } else if (mystreq(ffmpeg->codec->name, "h264_nvenc")) {
+		ffmpeg->preferred_codec = USER_CODEC_H264NVENC;
+	} else {
         ffmpeg->preferred_codec = USER_CODEC_DEFAULT;
     }
 
