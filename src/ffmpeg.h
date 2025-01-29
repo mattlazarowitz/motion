@@ -40,6 +40,7 @@ enum TIMELAPSE_TYPE {
 enum USER_CODEC {
     USER_CODEC_V4L2M2M,    /* Requested codec for movie is h264_v4l2m2m */
     USER_CODEC_H264OMX,    /* Requested h264_omx */
+	USER_CODEC_H264NVENC,
     USER_CODEC_MPEG4OMX,   /* Requested mpeg4_omx */
     USER_CODEC_DEFAULT     /* All other default codecs */
 };
