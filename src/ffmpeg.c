@@ -537,24 +537,18 @@ static int ffmpeg_set_quality(struct ffmpeg *ffmpeg)
         if (ffmpeg->quality <= 0) {
             ffmpeg->quality = 45; // default to 45% quality
         }
-		if (ffmpeg->preferred_codec == USER_CODEC_H264NVENC) {
-			/*nvenc supports different options form what Motion has*/
-			av_dict_set(&ffmpeg->opts, "preset", "p1", 0);
-			av_dict_set(&ffmpeg->opts, "tune", "hq", 0);
-			av_dict_set(&ffmpeg->opts, "hwaccel", "cuda", 0);
-			av_dict_set(&ffmpeg->opts, "profile", "high", 0);
-		} else {
-			av_dict_set(&ffmpeg->opts, "preset", "ultrafast", 0);
-			av_dict_set(&ffmpeg->opts, "tune", "zerolatency", 0);			
-		}
-        /* This next if statement needs validation.  Are mpeg4omx
-         * and v4l2m2m even MY_CODEC_ID_H264 or MY_CODEC_ID_HEVC
-         * such that it even would be possible to be part of this
-         * if block to start with? */
-		switch (ffmpeg->preferred_codec) {
+		/* The parameter names and specefic quality values are highly codec dependent. */
+		/* Individual codecs need to be tweaked individually. */
+		switch (ffmpeg->preferred_codec) { 
 			case USER_CODEC_H264OMX:
 			case USER_CODEC_MPEG4OMX:
 			case USER_CODEC_V4L2M2M:
+				/* This next if statement needs validation.  Are mpeg4omx
+				 * and v4l2m2m even MY_CODEC_ID_H264 or MY_CODEC_ID_HEVC
+				 * such that it even would be possible to be part of this
+				 * if block to start with? */
+				av_dict_set(&ffmpeg->opts, "preset", "ultrafast", 0);
+				av_dict_set(&ffmpeg->opts, "tune", "zerolatency", 0);
 				// bit_rate = ffmpeg->width * ffmpeg->height * ffmpeg->fps * quality_factor
 				ffmpeg->quality = (int)(((int64_t)ffmpeg->width * ffmpeg->height * ffmpeg->fps * ffmpeg->quality) >> 7);
 				// Clip bit rate to min
@@ -564,22 +558,25 @@ static int ffmpeg_set_quality(struct ffmpeg *ffmpeg)
 				}
 				ffmpeg->ctx_codec->profile = FF_PROFILE_H264_HIGH;
 				ffmpeg->ctx_codec->bit_rate = ffmpeg->quality;
+				av_dict_set(&ffmpeg->opts, "preset", "ultrafast", 0);
+				av_dict_set(&ffmpeg->opts, "tune", "zerolatency", 0);
 			break;
 			case USER_CODEC_H264NVENC:
-				// just not working well for NVENC
-				//char cq[10];
-				//MOTION_LOG(INF, TYPE_ENCODER, NO_ERRNO, _("inital nvenc quality: %d"),ffmpeg->quality);
-				//ffmpeg->quality = (int)(( (100-ffmpeg->quality) * 51)/100);
-				//snprintf(cq, 10, "%d", ffmpeg->quality);
-				// bit_rate = ffmpeg->width * ffmpeg->height * ffmpeg->fps * quality_factor
-				ffmpeg->quality = (int)(((int64_t)ffmpeg->width * ffmpeg->height * ffmpeg->fps * ffmpeg->quality) >> 7);
-				// Clip bit rate to min
-				if (ffmpeg->quality < 4000) {
-					// magic number
-					ffmpeg->quality = 4000;
-				}
-				ffmpeg->ctx_codec->profile = FF_PROFILE_H264_HIGH;
-				ffmpeg->ctx_codec->bit_rate = ffmpeg->quality; 
+			case USER_CODEC_HEVCNVENC: /* HEVC NVENC settings could use some individual tuning. */
+				char cq[10];
+				/* The nvenc cq setting scales 1-51. */
+				/* A setting 0f 0 *should* be automatic but without a bitrate setting, it's the equvalent of 51 */
+				ffmpeg->quality = (int)(( (101-ffmpeg->quality) * 51)/100);
+				MOTION_LOG(DBG, TYPE_ENCODER, NO_ERRNO, _("nvenc quality test: %d"),ffmpeg->quality);
+				/* nvenc doesn't really work if cq is set to 0 */
+				snprintf(cq, 10, "%d", ffmpeg->quality);
+				av_dict_set(&ffmpeg->opts, "cq", cq, 0);
+				/* The simpliest path forward is to translate FMPEG CLI parameters into the ops dictionary */
+				av_dict_set(&ffmpeg->opts, "preset", "p1", 0);
+				av_dict_set(&ffmpeg->opts, "tune", "ull", 0);
+				av_dict_set(&ffmpeg->opts, "rc", "vbr", 0);
+				av_dict_set(&ffmpeg->opts, "profile", "main", 0);
+				av_dict_set(&ffmpeg->opts, "level", "4.2", 0);
 				break;
 			default:
 				// Control other H264 encoders quality via CRF
@@ -587,9 +584,12 @@ static int ffmpeg_set_quality(struct ffmpeg *ffmpeg)
 				ffmpeg->quality = (int)(( (100-ffmpeg->quality) * 51)/100);
 				snprintf(crf, 10, "%d", ffmpeg->quality);
 				av_dict_set(&ffmpeg->opts, "crf", crf, 0);
+				av_dict_set(&ffmpeg->opts, "preset", "ultrafast", 0);
+				av_dict_set(&ffmpeg->opts, "tune", "zerolatency", 0);
 				break;
 		}
     } else {
+		/* For codecs other than h.264 or HEVC */
         /* The selection of 8000 is a subjective number based upon viewing output files */
         if (ffmpeg->quality > 0) {
             ffmpeg->quality =(int)(((100-ffmpeg->quality)*(100-ffmpeg->quality)*(100-ffmpeg->quality) * 8000) / 1000000) + 1;
@@ -674,6 +674,8 @@ static int ffmpeg_set_codec_preferred(struct ffmpeg *ffmpeg)
         ffmpeg->preferred_codec = USER_CODEC_MPEG4OMX;
     } else if (mystreq(ffmpeg->codec->name, "h264_nvenc")) {
 		ffmpeg->preferred_codec = USER_CODEC_H264NVENC;
+	} else if (mystreq(ffmpeg->codec->name, "hevc_nvenc")) {
+		ffmpeg->preferred_codec = USER_CODEC_HEVCNVENC;
 	} else {
         ffmpeg->preferred_codec = USER_CODEC_DEFAULT;
     }
